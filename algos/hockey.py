@@ -1,7 +1,8 @@
 import json
 import os
 import sys
-
+import shutil
+import zipfile
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -42,7 +43,7 @@ def get_job_details():
 def get_input(local=False):
     if local:
         print("Reading local file")
-        return "data/data.csv"
+        return "data/0"
 
     dids = os.getenv("DIDS", None)
 
@@ -417,6 +418,13 @@ def per_period(player_id, session_id, data, output_dir):
     except Exception as e:
         print(e)
 
+def zipdir(path, ziph):
+    # ziph is zipfile handle
+    for root, dirs, files in os.walk(path):
+        for file in files:
+            ziph.write(os.path.join(root, file), 
+                       os.path.relpath(os.path.join(root, file), 
+                                       os.path.join(path, '..')))
 
 def main(job_details, local=False):
     print('Starting compute job with the following input information:')
@@ -428,15 +436,43 @@ def main(job_details, local=False):
         print("Could not retrieve filename.")
         return
 
-    data = pd.read_csv(filename, sep=";", encoding_errors="ignore")
+    output_dir = "./outputs/result" if local else "/data/outputs/result"
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
 
-    for player_id in data['Player ID'].unique():
-        output_dir = "./outputs/{}".format(player_id) if local else "/data/outputs/{}".format(player_id)
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
+    try:
+        with zipfile.ZipFile(filename) as zf:
+            for file in zf.namelist():
+                print(f"Reading file in zip [{file}].")
+                if file != "data.json":
+                    try:
+                        with zf.open(file) as f:
+                            data = pd.read_csv(f, sep=";", encoding_errors="ignore", skip_blank_lines=True)
 
-        strength_weakness(player_id, data, output_dir)
-        per_period(player_id, 234, data, output_dir)
+                            for player_id in data['Player ID'].unique():
+                                csv_dir = "{}/{}".format(output_dir, file)
+                                player_dir = "{}/{}".format(csv_dir, player_id)
+                                
+                                if not os.path.exists(csv_dir):
+                                    os.makedirs(csv_dir)
+                                
+                                if not os.path.exists(player_dir):
+                                    os.makedirs(player_dir)
+
+                                strength_weakness(player_id, data, player_dir)
+                                per_period(player_id, 234, data, player_dir)
+                    except:
+                        pass
+
+    except zipfile.BadZipFile as error:
+        print("Error reading zipfile [%s]", file, exc_info=error)
+        sys.exit(-1)
+
+    output_filename = "./outputs/result.zip" if local else "/data/outputs/result.zip"
+    with zipfile.ZipFile(output_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        zipdir(output_dir, zipf)
+
+    shutil.rmtree(output_dir)
 
     print('Done!')
 
