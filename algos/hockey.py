@@ -43,7 +43,7 @@ def get_job_details():
 def get_input(local=False):
     if local:
         print("Reading local file")
-        return "data/0"
+        return "data/data.csv"
 
     dids = os.getenv("DIDS", None)
 
@@ -422,8 +422,8 @@ def zipdir(path, ziph):
     # ziph is zipfile handle
     for root, dirs, files in os.walk(path):
         for file in files:
-            ziph.write(os.path.join(root, file), 
-                       os.path.relpath(os.path.join(root, file), 
+            ziph.write(os.path.join(root, file),
+                       os.path.relpath(os.path.join(root, file),
                                        os.path.join(path, '..')))
 
 def main(job_details, local=False):
@@ -440,6 +440,11 @@ def main(job_details, local=False):
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
+    fields = ['Player ID', 'Position', 'Distance / min (m)', 'High Metabolic Power Distance / min (m)',
+             'Acceleration Load (max.)', 'Speed (max.) (km/h)', 'Speed (Ø) (km/h)',
+             'Acceleration (max.) (m/s²)', 'Deceleration (max.) (m/s²)', 'Accelerations / min',
+             'Decelerations / min', 'Types', 'Description', 'Session ID']
+    frames = []
     try:
         with zipfile.ZipFile(filename) as zf:
             for file in zf.namelist():
@@ -447,22 +452,21 @@ def main(job_details, local=False):
                 if file != "data.json":
                     try:
                         with zf.open(file) as f:
-                            data = pd.read_csv(f, sep=";", encoding_errors="ignore", skip_blank_lines=True)
-
-                            for player_id in data['Player ID'].unique():
-                                csv_dir = "{}/{}".format(output_dir, file)
-                                player_dir = "{}/{}".format(csv_dir, player_id)
-                                
-                                if not os.path.exists(csv_dir):
-                                    os.makedirs(csv_dir)
-                                
-                                if not os.path.exists(player_dir):
-                                    os.makedirs(player_dir)
-
-                                strength_weakness(player_id, data, player_dir)
-                                per_period(player_id, 234, data, player_dir)
-                    except:
+                            file_data = pd.read_csv(f, sep=";", encoding_errors="ignore", skip_blank_lines=True, usecols=fields).dropna(how='all')
+                            frames.append(file_data)
+                    except Exception as e:
+                        print(str(e))
                         pass
+            data = pd.concat(frames)
+            print(data['Player ID'].unique())
+            for player_id in data['Player ID'].unique():
+                player_dir = "{}/{}".format(output_dir, player_id)
+
+                if not os.path.exists(player_dir):
+                    os.makedirs(player_dir)
+
+                strength_weakness(player_id, data, player_dir)
+                per_period(player_id, 234, data, player_dir)
 
     except zipfile.BadZipFile as error:
         print("Error reading zipfile [%s]", file, exc_info=error)
